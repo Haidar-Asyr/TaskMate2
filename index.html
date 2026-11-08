@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <link rel="manifest" href="./manifest.json">
+<meta name="theme-color" content="#101d30">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TaskMate</title>
+<style>
+*{box-sizing:border-box}
+body{
+ margin:0;background:#101d30;color:white;
+ font-family:Arial,sans-serif;padding:20px
+}
+.app{max-width:500px;margin:auto}
+h1{color:#71dbb5}
+.card{
+ background:#1b2d43;padding:18px;
+ border-radius:16px;margin:15px 0
+}
+input,textarea,select{
+ width:100%;padding:12px;margin:7px 0;
+ border:1px solid #40536a;border-radius:9px;
+ background:#263b53;color:white;font:inherit
+}
+button{
+ border:0;border-radius:9px;padding:11px;
+ cursor:pointer;font-weight:bold
+}
+.primary{background:#71dbb5;color:#102b25;width:100%}
+.filters{display:flex;gap:8px}
+.filters button{flex:1;background:#30465f;color:white}
+.task{
+ background:#263b53;padding:14px;
+ border-radius:12px;margin:10px 0
+}
+.task small{color:#b6c5d6}
+.done{text-decoration:line-through;opacity:.6}
+.actions{display:flex;gap:8px;margin-top:12px}
+.actions button{flex:1}
+.status{color:#71dbb5}
+</style>
+</head>
+  <script>
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("./sw.js")
+      .then(() => console.log("TaskMate offline ready"))
+      .catch(error => console.error(error));
+  });
+}
+</script>
+<body>
+<div class="app">
+<h1>◈ TaskMate</h1>
+<p>Your daily school task manager.</p>
+
+<div class="card">
+<h3>Assignment Overview</h3>
+<p>Total tasks: <b id="total">0</b></p>
+<p>Pending: <b id="pending">0</b></p>
+<p>Completed: <b id="completed">0</b></p>
+</div>
+
+<div class="card">
+<h3 id="formTitle">Add New Task</h3>
+<input id="subject" placeholder="Subject (e.g. Mathematics)">
+<input id="title" placeholder="Assignment name">
+<label>Deadline</label>
+<input id="deadline" type="datetime-local">
+<select id="status">
+<option value="pending">Pending</option>
+<option value="completed">Completed</option>
+</select>
+<textarea id="notes" placeholder="Additional notes..."></textarea>
+<button class="primary" onclick="saveTask()">SAVE TASK</button>
+<button onclick="cancelEdit()" id="cancel" style="display:none">
+Cancel Edit
+</button>
+</div>
+
+<h3>My Assignments</h3>
+<div class="filters">
+<button onclick="render('all')">All</button>
+<button onclick="render('pending')">Pending</button>
+<button onclick="render('completed')">Done</button>
+</div>
+
+<div id="tasks"></div>
+</div>
+
+<script>
+let tasks=JSON.parse(localStorage.getItem("taskmate")||"[]");
+let editing=null;
+let currentFilter="all";
+
+function saveData(){
+ localStorage.setItem("taskmate",JSON.stringify(tasks));
+}
+
+function saveTask(){
+ const subject=document.getElementById("subject").value.trim();
+ const title=document.getElementById("title").value.trim();
+ const deadline=document.getElementById("deadline").value;
+ const status=document.getElementById("status").value;
+ const notes=document.getElementById("notes").value.trim();
+
+ if(!subject||!title||!deadline){
+  alert("Please complete subject, title and deadline!");
+  return;
+ }
+
+ const task={
+  subject,title,deadline,status,notes
+ };
+
+ if(editing!==null){
+  tasks[editing]=task;
+  editing=null;
+ }else{
+  tasks.push(task);
+ }
+
+ saveData();
+ clearForm();
+ render(currentFilter);
+}
+
+function clearForm(){
+ ["subject","title","deadline","notes"].forEach(id=>{
+  document.getElementById(id).value="";
+ });
+ document.getElementById("status").value="pending";
+ document.getElementById("formTitle").textContent="Add New Task";
+ document.getElementById("cancel").style.display="none";
+}
+
+function cancelEdit(){
+ editing=null;
+ clearForm();
+}
+
+function editTask(index){
+ const t=tasks[index];
+ editing=index;
+
+ document.getElementById("subject").value=t.subject;
+ document.getElementById("title").value=t.title;
+ document.getElementById("deadline").value=t.deadline;
+ document.getElementById("status").value=t.status;
+ document.getElementById("notes").value=t.notes;
+
+ document.getElementById("formTitle").textContent="Edit Task";
+ document.getElementById("cancel").style.display="block";
+ window.scrollTo({top:0,behavior:"smooth"});
+}
+
+function deleteTask(index){
+ if(confirm("Delete this task?")){
+  tasks.splice(index,1);
+  saveData();
+  render(currentFilter);
+ }
+}
+
+function toggleTask(index){
+ tasks[index].status=
+  tasks[index].status==="pending"?"completed":"pending";
+ saveData();
+ render(currentFilter);
+}
+
+function render(filter="all"){
+ currentFilter=filter;
+ const list=document.getElementById("tasks");
+ list.innerHTML="";
+
+ let sorted=tasks.map((t,i)=>({...t,index:i}))
+ .sort((a,b)=>new Date(a.deadline)-new Date(b.deadline));
+
+ sorted.filter(t=>filter==="all"||t.status===filter)
+ .forEach(t=>{
+  const overdue=t.status==="pending"&&
+   new Date(t.deadline)<new Date();
+
+  const date=new Date(t.deadline).toLocaleString("id-ID");
+
+  list.innerHTML+=`
+   <div class="task">
+    <b>${escapeHTML(t.subject)}</b>
+    <p class="${t.status==="completed"?"done":""}">
+      ${escapeHTML(t.title)}
+    </p>
+    <small>Deadline: ${date}</small><br>
+    <small class="status">
+      ${t.status==="completed"?"Completed":
+       overdue?"OVERDUE":"Pending"}
+    </small>
+    <p>${escapeHTML(t.notes||"No notes")}</p>
+    <div class="actions">
+     <button onclick="toggleTask(${t.index})">Toggle</button>
+     <button onclick="editTask(${t.index})">Edit</button>
+     <button onclick="deleteTask(${t.index})">Delete</button>
+    </div>
+   </div>`;
+ });
+
+ document.getElementById("total").textContent=tasks.length;
+ document.getElementById("pending").textContent=
+  tasks.filter(t=>t.status==="pending").length;
+ document.getElementById("completed").textContent=
+  tasks.filter(t=>t.status==="completed").length;
+}
+
+function escapeHTML(value){
+ return String(value).replace(/[&<>"']/g,c=>({
+  "&":"&amp;","<":"&lt;",">":"&gt;",
+  '"':"&quot;","'":"&#39;"
+ })[c]);
+}
+
+render();
+</script>
+</body>
+</html>
